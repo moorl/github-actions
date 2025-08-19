@@ -25,6 +25,10 @@ on:
         required: false
         type: string
         default: ""
+
+    secrets:
+      ghToken:
+        required: true
 jobs:
   Build:
     runs-on: ubuntu-latest
@@ -33,7 +37,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # fetch all git entries for changelog generation
           fetch-depth: 0
       - name: Install shopware-cli
         uses: shopware/shopware-cli-action@v1
