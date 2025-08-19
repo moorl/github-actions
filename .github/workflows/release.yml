@@ -10,11 +10,6 @@ on:
         required: false
         type: string
         default: 'latest'
-      publishOnly:
-        description: 'Publish only to Shopware Store and dont create a tag'
-        required: false
-        type: boolean
-        default: false
       path:
         description: "Path to your bundle"
         required: false
@@ -27,12 +22,41 @@ on:
         default: ""
 
     secrets:
+      accountUser:
+        required: false
+      accountPassword:
+        required: false
       ghToken:
         required: true
+
 jobs:
+  check_version:
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.ver.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compare composer.json version
+        id: ver
+        run: |
+          old=$(git show HEAD^:composer.json 2>/dev/null | jq -r '.version // empty')
+          new=$(jq -r '.version // empty' composer.json)
+
+          if [ "$old" != "$new" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   Build:
+    needs: check_version
+    if: ${{ needs.check_version.outputs.version_changed == 'true' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    outputs:
+      EXTENSION_VERSION: ${{ steps.getver.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,41 +78,60 @@ jobs:
           name: ${{ inputs.extensionName }}
           path: ${{ inputs.extensionName }}.zip
       - name: Get version
+        id: getver
         run: |
-          echo "EXTENSION_VERSION=$(shopware-cli extension get-version .)" >> $GITHUB_ENV
+          version=$(shopware-cli extension get-version .)
+          echo "EXTENSION_VERSION=$version" >> $GITHUB_ENV
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - name: Validate Zip
+        run: shopware-cli extension validate $(pwd)/${{ inputs.extensionName }}.zip
+
+  Release:
+    needs: Build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.extensionName }}
       - name: Check Tag existence
         uses: mukunku/tag-exists-action@v1.6.0
         id: checkTag
         with:
-          tag: ${{ env.EXTENSION_VERSION }}
+          tag: ${{ needs.Build.outputs.EXTENSION_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.ghToken }}
-      - name: Validate Zip
-        run: shopware-cli extension validate $(pwd)/${{ inputs.extensionName }}.zip
+      - name: Store Upload
+        if: ${{ secrets.accountUser != '' && secrets.accountPassword != '' }}
+        run: shopware-cli account producer extension upload $(pwd)/${{ inputs.extensionName }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.ghToken }}
+          SHOPWARE_CLI_ACCOUNT_EMAIL: ${{ secrets.accountUser }}
+          SHOPWARE_CLI_ACCOUNT_PASSWORD: ${{ secrets.accountPassword }}
       - name: Extract Changelog
-        if: steps.checkTag.outputs.exists != 'true' && inputs.publishOnly == false
+        if: steps.checkTag.outputs.exists != 'true'
         run: shopware-cli extension get-changelog $(pwd)/${{ inputs.extensionName }}.zip > /tmp/changelog.txt
       - name: Unzip
-        if: inputs.publishOnly == false
         run: |
           unzip -o -q "${{ inputs.extensionName }}.zip" -d /tmp/toDeploy
           mv "${{ inputs.extensionName }}.zip" /tmp/
           rsync -av --exclude '.git' --delete /tmp/toDeploy/${{ inputs.extensionName }}/ .
           rm -rf ./vendor
       - name: Commit
-        if: steps.checkTag.outputs.exists != 'true' && inputs.publishOnly == false
+        if: steps.checkTag.outputs.exists != 'true'
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "<>"
           git add -f .
           git commit -m "Build release"
-          git tag ${EXTENSION_VERSION}
-          git push origin ${EXTENSION_VERSION}
+          git tag ${{ needs.Build.outputs.EXTENSION_VERSION }}
+          git push origin ${{ needs.Build.outputs.EXTENSION_VERSION }}
       - name: Create a GitHub release
-        if: steps.checkTag.outputs.exists != 'true' && inputs.publishOnly == false
+        if: steps.checkTag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
         with:
           artifacts: /tmp/${{ inputs.extensionName }}.zip
-          tag: ${{ env.EXTENSION_VERSION }}
-          name: ${{ env.EXTENSION_VERSION }}
+          tag: ${{ needs.Build.outputs.EXTENSION_VERSION }}
+          name: ${{ needs.Build.outputs.EXTENSION_VERSION }}
           bodyFile: /tmp/changelog.txt
