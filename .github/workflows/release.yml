@@ -66,22 +66,27 @@ jobs:
         with:
           version: ${{ inputs.cliVersion }}
 
+      # Version früh ermitteln und für spätere Schritte verfügbar machen
+      - name: Get version
+        run: |
+          echo "EXTENSION_VERSION=$(shopware-cli extension get-version '${{ inputs.path }}')" >> $GITHUB_ENV
+          # Praktischer, wiederverwendbarer ZIP-Dateiname inkl. Version
+          echo "ZIP_NAME=${{ inputs.extensionName }}-${EXTENSION_VERSION}.zip" >> $GITHUB_ENV
+
       - name: Build & create zip
         env:
           NODE_OPTIONS: --openssl-legacy-provider
         run: |
+          # shopware-cli erzeugt <name>-<sha>.zip im aktuellen Verzeichnis
           shopware-cli extension zip --git-commit ${{ github.sha }} "${{ inputs.path }}" --release
-          mv ${{ inputs.extensionName }}-${{ github.sha }}.zip ${{ inputs.extensionName }}.zip
+          mv "${{ inputs.extensionName }}-${{ github.sha }}.zip" "${ZIP_NAME}"
+          echo "Built ${ZIP_NAME}"
 
       - name: Upload Artefact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.extensionName }}
-          path: ${{ inputs.extensionName }}.zip
-
-      - name: Get version
-        run: |
-          echo "EXTENSION_VERSION=$(shopware-cli extension get-version .)" >> $GITHUB_ENV
+          name: ${{ inputs.extensionName }}-${{ env.EXTENSION_VERSION }}
+          path: ${{ env.ZIP_NAME }}
 
       - name: Check Tag existence
         uses: mukunku/tag-exists-action@v1.6.0
@@ -92,26 +97,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ghToken }}
 
       - name: Validate Zip
-        run: shopware-cli extension validate $(pwd)/${{ inputs.extensionName }}.zip
+        run: shopware-cli extension validate "$(pwd)/${ZIP_NAME}"
 
       - name: Store Upload
-        if: ${{ env.HAS_CREDS == 'true' }}
-        run: shopware-cli account producer extension upload $(pwd)/${{ inputs.extensionName }}.zip
+        if: ${{ secrets.accountUser != '' && secrets.accountPassword != '' }}
+        run: shopware-cli account producer extension upload "$(pwd)/${ZIP_NAME}"
         env:
           GITHUB_TOKEN: ${{ secrets.ghToken }}
           SHOPWARE_CLI_ACCOUNT_EMAIL: ${{ secrets.accountUser }}
           SHOPWARE_CLI_ACCOUNT_PASSWORD: ${{ secrets.accountPassword }}
-          HAS_CREDS: ${{ secrets.accountUser != '' && secrets.accountPassword != '' }}
 
       - name: Extract Changelog
         if: steps.checkTag.outputs.exists != 'true'
-        run: shopware-cli extension get-changelog $(pwd)/${{ inputs.extensionName }}.zip > /tmp/changelog.txt
+        run: shopware-cli extension get-changelog "$(pwd)/${ZIP_NAME}" > /tmp/changelog.txt
 
       - name: Unzip
         run: |
-          unzip -o -q "${{ inputs.extensionName }}.zip" -d /tmp/toDeploy
-          mv "${{ inputs.extensionName }}.zip" /tmp/
-          rsync -av --exclude '.git' --delete /tmp/toDeploy/${{ inputs.extensionName }}/ .
+          unzip -o -q "${ZIP_NAME}" -d /tmp/toDeploy
+          mv "${ZIP_NAME}" /tmp/
+          rsync -av --exclude '.git' --delete "/tmp/toDeploy/${{ inputs.extensionName }}/" .
           rm -rf ./vendor
 
       - name: Commit
@@ -128,7 +132,7 @@ jobs:
         if: steps.checkTag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
         with:
-          artifacts: /tmp/${{ inputs.extensionName }}.zip
+          artifacts: /tmp/${{ env.ZIP_NAME }}
           tag: ${{ env.EXTENSION_VERSION }}
           name: ${{ env.EXTENSION_VERSION }}
           bodyFile: /tmp/changelog.txt
