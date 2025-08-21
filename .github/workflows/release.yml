@@ -69,9 +69,12 @@ jobs:
       # Version früh ermitteln und für spätere Schritte verfügbar machen
       - name: Get version
         run: |
-          echo "EXTENSION_VERSION=$(shopware-cli extension get-version '${{ inputs.path }}')" >> $GITHUB_ENV
-          # Praktischer, wiederverwendbarer ZIP-Dateiname inkl. Version
-          echo "ZIP_NAME=${{ inputs.extensionName }}-${EXTENSION_VERSION}.zip" >> $GITHUB_ENV
+          set -euo pipefail
+          ver="$(shopware-cli extension get-version '${{ inputs.path }}')"
+          {
+            echo "EXTENSION_VERSION=$ver"
+            echo "ZIP_NAME=${{ inputs.extensionName }}-$ver.zip"
+          } >> "$GITHUB_ENV"
 
       - name: Build & create zip
         env:
