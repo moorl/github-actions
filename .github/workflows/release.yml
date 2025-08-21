@@ -71,7 +71,7 @@ jobs:
         run: |
           echo "EXTENSION_VERSION=$(shopware-cli extension get-version '${{ inputs.path }}')" >> $GITHUB_ENV
           # Praktischer, wiederverwendbarer ZIP-Dateiname inkl. Version
-          echo "ZIP_NAME=${{ inputs.extensionName }}-${EXTENSION_VERSION}.zip" >> $GITHUB_ENV
+          echo "ZIP_NAME=${{ inputs.extensionName }}-${{ env.EXTENSION_VERSION }}.zip" >> $GITHUB_ENV
 
       - name: Build & create zip
         env:
