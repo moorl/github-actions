@@ -5,6 +5,10 @@ on:
       extensionName:
         required: true
         type: string
+      publishShopwareStore:
+        required: false
+        type: string
+        default: 'false'
       cliVersion:
         description: 'The shopware-cli version to build the extension with'
         required: false
@@ -20,10 +24,6 @@ on:
         required: false
         type: string
         default: ""
-
-    variables:
-      publishShopwareStore:
-        required: false
 
     secrets:
       accountUser:
@@ -113,7 +113,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ghToken }}
           SHOPWARE_CLI_ACCOUNT_EMAIL: ${{ secrets.accountUser }}
           SHOPWARE_CLI_ACCOUNT_PASSWORD: ${{ secrets.accountPassword }}
-          PUBLISH_SHOPWARE_STORE: ${{ variables.publishShopwareStore == 'true' && secrets.accountUser != '' && secrets.accountPassword != '' }}
+          PUBLISH_SHOPWARE_STORE: ${{ inputs.publishShopwareStore == 'true' && secrets.accountUser != '' && secrets.accountPassword != '' }}
 
       - name: Extract Changelog
         if: steps.checkTag.outputs.exists != 'true'
