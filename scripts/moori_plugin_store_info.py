@@ -168,7 +168,7 @@ class ShopwareClient:
     def upload_media(self, file_path: pathlib.Path) -> str:
         # 1) Media-ID anlegen (mit eigener ID + _response=true)
         create_url = f"{self.base}/api/media?_response=true"
-        media_id = str(uuid4())
+        media_id = uuid4().hex
         r1 = self.session.post(
             create_url,
             headers=self.headers(),
