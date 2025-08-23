@@ -6,6 +6,7 @@ import sys
 import json
 import argparse
 import pathlib
+import mimetypes
 from typing import Dict, Any, List, Optional, Tuple
 from uuid import uuid4
 
@@ -166,28 +167,40 @@ class ShopwareClient:
             abort(f"Produkt-Update fehlgeschlagen ({r.status_code}): {r.text}")
 
     def upload_media(self, file_path: pathlib.Path) -> str:
-        # 1) Media-ID anlegen (mit eigener ID + _response=true)
+        media_id = uuid4().hex  # 32-hex ohne Bindestriche
+        ext = (file_path.suffix.lstrip(".") or "png").lower()
+
+        # 1) Media-Entity anlegen
         create_url = f"{self.base}/api/media?_response=true"
-        media_id = uuid4().hex
         r1 = self.session.post(
             create_url,
             headers=self.headers(),
-            json={"id": media_id},   # <- wichtig: nicht leeres {}
+            json={"id": media_id},
             timeout=30,
         )
         if r1.status_code not in (200, 201):
             abort(f"Media-Erstellung fehlgeschlagen: {r1.status_code} {r1.text}")
 
-        # 2) Binärdaten hochladen
-        ext = (file_path.suffix.lstrip(".") or "png").lower()
+        # 2) Binär-Upload (ROH, kein multipart)
         upload_url = f"{self.base}/api/_action/media/{media_id}/upload?extension={ext}&fileName={file_path.stem}"
+
+        mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        size = file_path.stat().st_size
+        if size == 0:
+            abort(f"Datei ist leer: {file_path}")
+
         with file_path.open("rb") as f:
             r2 = self.session.post(
                 upload_url,
-                headers={"Authorization": f"Bearer {self.token()}"},
-                files={"file": (file_path.name, f)},
-                timeout=120,
+                headers={
+                    "Authorization": f"Bearer {self.token()}",
+                    "Content-Type": mime,
+                    "Content-Length": str(size),
+                },
+                data=f,         # <— roher Stream, KEIN 'files='!
+                timeout=180,
             )
+
         if r2.status_code not in (200, 204):
             abort(f"Media-Upload fehlgeschlagen: {r2.status_code} {r2.text}")
 
