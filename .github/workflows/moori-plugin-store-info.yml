@@ -1,0 +1,68 @@
+name: Moori Plugin Store Info
+
+on:
+  workflow_call:
+    inputs:
+      store_yaml_path:
+        description: "Pfad zur .shopware-extension.yml relativ zum Caller-Repo-Root"
+        required: false
+        type: string
+        default: .shopware-extension.yml
+      repo_name:
+        description: "Produktnummer (= Repo-Name in Shopware). Wenn leer, wird der Caller-Repo-Name genutzt."
+        required: false
+        type: string
+    secrets:
+      MOORI_PLUGIN_STORE_URL:
+        required: true
+      MOORI_PLUGIN_STORE_API_ID:
+        required: true
+      MOORI_PLUGIN_STORE_API_SECRET:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Build HTML + Update Shopware
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Caller-Repo auschecken (das eigentliche Produkt-Repo)
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      # 2) Tools-Repo (dieses Repo) auschecken, um das Script zu bekommen
+      - name: Checkout tools repository
+        uses: actions/checkout@v4
+        with:
+          repository: my-org/shopware-tools
+          ref: main
+          path: tools
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml markdown requests
+
+      - name: Run sync
+        working-directory: repo
+        env:
+          SHOPWARE_URL: ${{ secrets.MOORI_PLUGIN_STORE_URL }}
+          SHOPWARE_CLIENT_ID: ${{ secrets.MOORI_PLUGIN_STORE_API_ID }}
+          SHOPWARE_CLIENT_SECRET: ${{ secrets.MOORI_PLUGIN_STORE_API_SECRET }}
+          # Falls repo_name nicht übergeben wurde, nimm den Caller-Repo-Namen
+          REPO_NAME: ${{ inputs.repo_name || github.event.repository.name }}
+          STORE_YAML_PATH: ${{ inputs.store_yaml_path }}
+        run: |
+          python ../scripts/moori_plugin_store_info.py \
+            --yaml-path "${STORE_YAML_PATH}" \
+            --repo-name "${REPO_NAME}"
