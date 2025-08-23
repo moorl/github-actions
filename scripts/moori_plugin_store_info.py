@@ -292,7 +292,7 @@ class ShopwareClient:
         media_payload = []
         cover_pm_id = None
 
-        for (mid, pos) in items:
+        for (mid, pos) in media_ids:
             pm_id = md5_hex(f"{product_id}:{mid}")
             media_payload.append({
                 "id": pm_id,
