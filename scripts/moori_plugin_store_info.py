@@ -286,7 +286,7 @@ class ShopwareClient:
 
         payload = {"media": media_payload}
         if cover_media_id:
-            payload["coverId"] = cover_media_id
+            payload["cover"] = {"mediaId": cover_media_id}
 
         r = self.session.patch(url, headers=self.headers(), json=payload, timeout=60)
         if r.status_code not in (200, 204):
