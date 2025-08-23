@@ -59,10 +59,9 @@ jobs:
           SHOPWARE_URL: ${{ secrets.MOORI_PLUGIN_STORE_URL }}
           SHOPWARE_CLIENT_ID: ${{ secrets.MOORI_PLUGIN_STORE_API_ID }}
           SHOPWARE_CLIENT_SECRET: ${{ secrets.MOORI_PLUGIN_STORE_API_SECRET }}
-          # Falls repo_name nicht übergeben wurde, nimm den Caller-Repo-Namen
           REPO_NAME: ${{ inputs.repo_name || github.event.repository.name }}
           STORE_YAML_PATH: ${{ inputs.store_yaml_path }}
         run: |
-          python ../scripts/moori_plugin_store_info.py \
+          python ../tools/scripts/moori_plugin_store_info.py \
             --yaml-path "${STORE_YAML_PATH}" \
             --repo-name "${REPO_NAME}"
