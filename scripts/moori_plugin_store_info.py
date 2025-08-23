@@ -100,12 +100,12 @@ def build_locale_html(
     if desc_html:
         html += [f"<section id='description'>{desc_html}</section>"]
     if manual_html:
-        html += [f"<section id='installation-manual'><h2>Installation</h2>{manual_html}</section>"]
+        html += [f"<section id='installation-manual'><h3>Installation</h3>{manual_html}</section>"]
 
     if highlights:
-        html += [f"<section id='highlights'><h2>Highlights</h2>{list_block(highlights)}</section>"]
+        html += [f"<section id='highlights'><h3>Highlights</h3>{list_block(highlights)}</section>"]
     if features:
-        html += [f"<section id='features'><h2>Features</h2>{list_block(features)}</section>"]
+        html += [f"<section id='features'><h3>Features</h3>{list_block(features)}</section>"]
 
     final = "\n".join(html)
     wrapper = f"""<!doctype html>
