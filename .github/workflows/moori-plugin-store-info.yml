@@ -39,7 +39,7 @@ jobs:
       - name: Checkout tools repository
         uses: actions/checkout@v4
         with:
-          repository: my-org/shopware-tools
+          repository: moorl/github-actions
           ref: main
           path: tools
 
