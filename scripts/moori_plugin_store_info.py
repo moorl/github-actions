@@ -7,6 +7,7 @@ import json
 import argparse
 import pathlib
 import mimetypes
+import re
 from typing import Dict, Any, List, Optional, Tuple
 from uuid import uuid4
 
@@ -31,18 +32,31 @@ def load_yaml(path: pathlib.Path) -> Dict[str, Any]:
         abort("Top-Level key 'store' fehlt in der YAML.")
     return data["store"]
 
-def read_file(file_entry: Any, base_dir: pathlib.Path) -> str:
+def read_file(value: Any, base_dir: pathlib.Path) -> str:
     """
-    YAML kann 'file: path' enthalten oder direkt String.
+    Unterstützt beide Formen:
+    - dict: {"file": "docs/store.md"}
+    - string: "file:docs/store.md"
     """
-    if isinstance(file_entry, str):
-        # direkter Text
-        return file_entry
-    if isinstance(file_entry, dict) and "file" in file_entry:
-        p = base_dir / file_entry["file"]
+    # Form 1: dict mit "file"
+    if isinstance(value, dict) and "file" in value:
+        p = (base_dir / str(value["file"])).resolve()
         if not p.exists():
             abort(f"Datei in YAML referenziert, aber nicht vorhanden: {p}")
         return p.read_text(encoding="utf-8")
+
+    # Form 2: string der mit "file:" beginnt
+    if isinstance(value, str):
+        m = re.match(r"^\s*file\s*:\s*(.+?)\s*$", value)
+        if m:
+            rel = m.group(1)
+            p = (base_dir / rel).resolve()
+            if not p.exists():
+                abort(f"Datei in YAML referenziert, aber nicht vorhanden: {p}")
+            return p.read_text(encoding="utf-8")
+        # sonst: echter Textstring
+        return value
+
     return ""
 
 def md_to_html(md_text: str) -> str:
