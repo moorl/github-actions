@@ -7,6 +7,7 @@ import json
 import argparse
 import pathlib
 from typing import Dict, Any, List, Optional, Tuple
+from uuid import uuid4
 
 import yaml
 import requests
@@ -165,28 +166,31 @@ class ShopwareClient:
             abort(f"Produkt-Update fehlgeschlagen ({r.status_code}): {r.text}")
 
     def upload_media(self, file_path: pathlib.Path) -> str:
-        """
-        1) Media-ID erstellen
-        2) Binärdaten hochladen
-        """
-        # 1) Media-ID anlegen
-        create_url = f"{self.base}/api/media"
-        r1 = self.session.post(create_url, headers=self.headers(), json={}, timeout=30)
+        # 1) Media-ID anlegen (mit eigener ID + _response=true)
+        create_url = f"{self.base}/api/media?_response=true"
+        media_id = str(uuid4())
+        r1 = self.session.post(
+            create_url,
+            headers=self.headers(),
+            json={"id": media_id},   # <- wichtig: nicht leeres {}
+            timeout=30,
+        )
         if r1.status_code not in (200, 201):
-            abort(f"Media-Erstellung fehlgeschlagen: {r1.text}")
-        media_id = r1.json()["data"]["id"]
+            abort(f"Media-Erstellung fehlgeschlagen: {r1.status_code} {r1.text}")
 
-        # 2) Upload Binary
-        ext = file_path.suffix.lstrip(".") or "png"
+        # 2) Binärdaten hochladen
+        ext = (file_path.suffix.lstrip(".") or "png").lower()
         upload_url = f"{self.base}/api/_action/media/{media_id}/upload?extension={ext}&fileName={file_path.stem}"
         with file_path.open("rb") as f:
             r2 = self.session.post(
                 upload_url,
                 headers={"Authorization": f"Bearer {self.token()}"},
-                files={"file": (file_path.name, f)}
+                files={"file": (file_path.name, f)},
+                timeout=120,
             )
         if r2.status_code not in (200, 204):
-            abort(f"Media-Upload fehlgeschlagen: {r2.text}")
+            abort(f"Media-Upload fehlgeschlagen: {r2.status_code} {r2.text}")
+
         return media_id
 
     def set_product_media(self, product_id: str, media_ids: List[Tuple[str, int]], cover_media_id: Optional[str]):
