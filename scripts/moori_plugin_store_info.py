@@ -180,29 +180,66 @@ class ShopwareClient:
         if r.status_code not in (200, 204):
             abort(f"Produkt-Update fehlgeschlagen ({r.status_code}): {r.text}")
 
-    def upload_media(self, file_path: pathlib.Path) -> str:
-        media_id = uuid4().hex  # 32-hex ohne Bindestriche
+    def search_media_by_name(self, file_stem: str, ext: str) -> str | None:
+        """Sucht vorhandene Media-Entity per fileName + fileExtension und gibt deren ID zurück."""
+        url = f"{self.base}/api/search/media"
+        body = {
+            "filter": [
+                {"type": "equals", "field": "fileName", "value": file_stem},
+                {"type": "equals", "field": "fileExtension", "value": ext.lower()},
+            ],
+            "limit": 1,
+        }
+        r = self.session.post(url, headers=self.headers(), json=body, timeout=30)
+        if r.status_code != 200:
+            abort(f"Media-Suche fehlgeschlagen: {r.status_code} {r.text}")
+        data = r.json().get("data", [])
+        return data[0]["id"] if data else None
+
+    def upload_media(self, file_path: pathlib.Path, repo_name: str) -> str:
+        """
+        1) Falls bereits ein Medium mit gleichem fileName+Extension existiert -> Datei ERSETZEN.
+        2) Sonst neues Media anlegen und Datei hochladen.
+        Gibt die mediaId zurück.
+        """
+
+        # Basename + Repo-Name kombinieren
+        base_stem = file_path.stem
         ext = (file_path.suffix.lstrip(".") or "png").lower()
-
-        # 1) Media-Entity anlegen
-        create_url = f"{self.base}/api/media?_response=true"
-        r1 = self.session.post(
-            create_url,
-            headers=self.headers(),
-            json={"id": media_id},
-            timeout=30,
-        )
-        if r1.status_code not in (200, 201):
-            abort(f"Media-Erstellung fehlgeschlagen: {r1.status_code} {r1.text}")
-
-        # 2) Binär-Upload (ROH, kein multipart)
-        upload_url = f"{self.base}/api/_action/media/{media_id}/upload?extension={ext}&fileName={file_path.stem}"
+        file_stem = f"{repo_name}__{base_stem}"
 
         mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
         size = file_path.stat().st_size
         if size == 0:
             abort(f"Datei ist leer: {file_path}")
 
+        # A) Bestehendes Medium finden
+        existing_id = self.search_media_by_name(file_stem, ext)
+        if existing_id:
+            upload_url = f"{self.base}/api/_action/media/{existing_id}/upload?extension={ext}&fileName={file_stem}"
+            with file_path.open("rb") as f:
+                r = self.session.post(
+                    upload_url,
+                    headers={
+                        "Authorization": f"Bearer {self.token()}",
+                        "Content-Type": mime,
+                        "Content-Length": str(size),
+                    },
+                    data=f,  # roher Stream verhindert Content-Length-Mismatch
+                    timeout=180,
+                )
+            if r.status_code not in (200, 204):
+                abort(f"Media-Upload (replace) fehlgeschlagen: {r.status_code} {r.text}")
+            return existing_id
+
+        # B) Neu anlegen + hochladen
+        media_id = uuid4().hex  # 32-hex ohne Bindestriche
+        create_url = f"{self.base}/api/media?_response=true"
+        r1 = self.session.post(create_url, headers=self.headers(), json={"id": media_id}, timeout=30)
+        if r1.status_code not in (200, 201):
+            abort(f"Media-Erstellung fehlgeschlagen: {r1.status_code} {r1.text}")
+
+        upload_url = f"{self.base}/api/_action/media/{media_id}/upload?extension={ext}&fileName={file_stem}"
         with file_path.open("rb") as f:
             r2 = self.session.post(
                 upload_url,
@@ -211,12 +248,29 @@ class ShopwareClient:
                     "Content-Type": mime,
                     "Content-Length": str(size),
                 },
-                data=f,         # <— roher Stream, KEIN 'files='!
+                data=f,
                 timeout=180,
             )
-
         if r2.status_code not in (200, 204):
-            abort(f"Media-Upload fehlgeschlagen: {r2.status_code} {r2.text}")
+            # Falls hier trotz Neuanlage Duplicate aufschlägt (z. B. Race Condition), versuche Retry mit modifiziertem Dateinamen:
+            if r2.status_code in (400, 409) and "CONTENT__MEDIA_DUPLICATED_FILE_NAME" in r2.text:
+                alt_stem = f"{file_stem}-{media_id[:8]}"
+                retry_url = f"{self.base}/api/_action/media/{media_id}/upload?extension={ext}&fileName={alt_stem}"
+                with file_path.open("rb") as f:
+                    r_retry = self.session.post(
+                        retry_url,
+                        headers={
+                            "Authorization": f"Bearer {self.token()}",
+                            "Content-Type": mime,
+                            "Content-Length": str(size),
+                        },
+                        data=f,
+                        timeout=180,
+                    )
+                if r_retry.status_code not in (200, 204):
+                    abort(f"Media-Upload fehlgeschlagen (Retry): {r_retry.status_code} {r_retry.text}")
+            else:
+                abort(f"Media-Upload fehlgeschlagen: {r2.status_code} {r2.text}")
 
         return media_id
 
@@ -328,7 +382,7 @@ def main():
         fp = base_dir / file_rel
         if not fp.exists():
             abort(f"Bilddatei nicht gefunden: {fp}")
-        mid = sw.upload_media(fp)
+        mid = sw.upload_media(fp, repo_name=args.repo_name)
         media_ids.append((mid, position))
         if is_preview_for_any_locale(img):
             cover_media_id = mid
