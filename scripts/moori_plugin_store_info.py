@@ -10,6 +10,7 @@ import mimetypes
 import re
 from typing import Dict, Any, List, Optional, Tuple
 from uuid import uuid4
+import hashlib
 
 import yaml
 import requests
@@ -18,6 +19,9 @@ from markdown import markdown
 # ------------------------
 # Helpers
 # ------------------------
+
+def md5_hex(s: str) -> str:
+    return hashlib.md5(s.encode("utf-8")).hexdigest()  # 32-hex, Shopware-konform
 
 def abort(msg: str, code: int = 1):
     print(f"::error::{msg}")
@@ -282,11 +286,26 @@ class ShopwareClient:
         # Produkt lesen (um vorhandene Media-Relationen nicht zu duplizieren könnte man sie erst holen;
         # hier setzen wir vollständig neu.)
         url = f"{self.base}/api/product/{product_id}"
+
         media_payload = [{"mediaId": mid, "position": pos} for (mid, pos) in media_ids]
 
+        media_payload = []
+        cover_pm_id = None
+
+        for (mid, pos) in items:
+            pm_id = md5_hex(f"{product_id}:{mid}")
+            media_payload.append({
+                "id": pm_id,
+                "mediaId": mid,
+                "position": pos
+            })
+            if cover_media_id == mid:
+                cover_pm_id = pm_id
+
         payload = {"media": media_payload}
-        if cover_media_id:
-            payload["cover"] = {"mediaId": cover_media_id}
+
+        if cover_pm_id:
+            payload["coverId"] = cover_pm_id
 
         r = self.session.patch(url, headers=self.headers(), json=payload, timeout=60)
         if r.status_code not in (200, 204):
