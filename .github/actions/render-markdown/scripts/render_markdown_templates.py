@@ -110,23 +110,60 @@ def derive_repo_name() -> str:
 def derive_branch_name() -> str:
     return os.environ.get("GITHUB_REF_NAME", "")
 
-def derive_version(repo_root: pathlib.Path) -> str:
+def read_composer(repo_root: pathlib.Path) -> dict:
+    """composer.json einlesen und als dict zurückgeben"""
     composer = repo_root / "composer.json"
     if composer.exists():
         try:
-            data = json.loads(composer.read_text(encoding="utf-8"))
-            v = data.get("version")
-            if isinstance(v, str) and v.strip():
-                return v.strip()
+            return json.loads(composer.read_text(encoding="utf-8"))
         except Exception:
             pass
+    return {}
+
+def derive_version(repo_root: pathlib.Path) -> str:
+    data = read_composer(repo_root)
+    v = data.get("version")
+    if isinstance(v, str) and v.strip():
+        return v.strip()
     return ""
+
+def derive_labels(repo_root: pathlib.Path) -> Dict[str, str]:
+    data = read_composer(repo_root)
+    extra = data.get("extra", {})
+    labels = extra.get("label", {})
+    out: Dict[str, str] = {}
+    if isinstance(labels, dict):
+        for locale, val in labels.items():
+            if val and isinstance(val, str):
+                # z.B. "label_de" oder "label_en"
+                key = f"label_{locale.lower().replace('-', '_')}"
+                out[key] = val
+    return out
+
+def derive_descriptions(repo_root: pathlib.Path) -> Dict[str, str]:
+    data = read_composer(repo_root)
+    extra = data.get("extra", {})
+    descs = extra.get("description", {})
+    out: Dict[str, str] = {}
+    if isinstance(descs, dict):
+        for locale, val in descs.items():
+            if val and isinstance(val, str):
+                key = f"description_{locale.lower().replace('-', '_')}"
+                out[key] = val
+    return out
 
 def merge_vars(user_vars: Dict[str, str], repo_root: pathlib.Path) -> Dict[str, str]:
     merged = dict(user_vars)
     merged.setdefault("repo_name", derive_repo_name())
     merged.setdefault("branch_name", derive_branch_name())
     merged.setdefault("version", derive_version(repo_root))
+
+    # Labels und Descriptions aus composer.json hinzufügen (falls noch nicht vorhanden)
+    for k, v in derive_labels(repo_root).items():
+        merged.setdefault(k, v)
+    for k, v in derive_descriptions(repo_root).items():
+        merged.setdefault(k, v)
+
     return merged
 
 def main():
