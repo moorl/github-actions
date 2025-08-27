@@ -10,6 +10,10 @@ on:
       docsToken:
         required: true
 
+concurrency:
+  group: docs-sync-global
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
