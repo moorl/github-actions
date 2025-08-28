@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: docs-sync-global
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync:
@@ -31,6 +31,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
+
+      - name: Render templates ({file:...}, {var:...})
+        uses: moorl/github-actions/.github/actions/render-markdown@main
+        with:
+          working-directory: .
+          inputs: |
+            ${{
+              env.SOURCE_DIR
+            }}/**/*.tpl.md
+
+      - name: Verify rendered docs
+        run: |
+          echo "PWD: $(pwd)"
+          ls -laR "${SOURCE_DIR}" || true
 
       - name: Checkout target repo (B)
         uses: actions/checkout@v4
@@ -45,10 +60,13 @@ jobs:
         run: |
           set -e
           mkdir -p "target/${TARGET_PATH}"
-          # Zielordner leeren (aber Repo-Metadaten behalten)
+          # Zielordner leeren (Repo-Metadaten behalten)
           rm -rf "target/${TARGET_PATH:?}/"* "target/${TARGET_PATH}"/.[!.]* "target/${TARGET_PATH}"/..?* || true
-          # Dateien rüberkopieren
-          rsync -a --exclude='.git' "${SOURCE_DIR}/" "target/${TARGET_PATH}/"
+          # Nur die gerenderten Markdown-Dateien rüberkopieren (keine .tpl.md)
+          rsync -a \
+            --exclude='.git' \
+            --exclude='*.tpl.md' \
+            "${SOURCE_DIR}/" "target/${TARGET_PATH}/"
 
       - name: Commit & push if changes
         working-directory: target
