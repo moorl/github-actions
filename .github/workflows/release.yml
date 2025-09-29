@@ -24,7 +24,6 @@ on:
         required: false
         type: string
         default: ""
-
     secrets:
       accountUser:
         required: false
@@ -34,53 +33,51 @@ on:
         required: true
 
 jobs:
-  check_version:
+  preflight:
     runs-on: ubuntu-latest
     outputs:
-      version_changed: ${{ steps.ver.outputs.changed }}
+      version: ${{ steps.read.outputs.version }}
+      tag_exists: ${{ steps.tagcheck.outputs.exists }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Get current and previous version
-        id: versions
+      # Version NUR aus composer.json (unter inputs.path) lesen
+      - name: Read version from composer.json
+        id: read
         shell: bash
         run: |
-          # extract current version from composer.json
-          CURR_VERSION=$(jq -r '.version // empty' composer.json)
-          if [ -z "$CURR_VERSION" ] || [ "$CURR_VERSION" = "null" ]; then
-            echo "composer.json has no .version field – aborting."
+          set -euo pipefail
+          FILE="${{ inputs.path%/ }}/composer.json"
+          if [[ ! -f "$FILE" ]]; then
+            echo "::error::composer.json not found at $FILE"
             exit 1
           fi
-          
-          # get previous version from previous commit if composer.json existed there
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            if git show HEAD~1:composer.json >/dev/null 2>&1; then
-              PREV_VERSION=$(git show HEAD~1:composer.json | jq -r '.version // empty')
-            else
-              PREV_VERSION=""
-            fi
-          else
-            PREV_VERSION=""
+          ver=$(jq -r '.version // empty' "$FILE")
+          if [[ -z "$ver" ]]; then
+            echo "::error::No 'version' field in $FILE"
+            exit 1
           fi
-          
-          echo "curr=$CURR_VERSION" >> "$GITHUB_OUTPUT"
-          echo "prev=$PREV_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using version: $ver"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Continue only if version changed
-        if: steps.versions.outputs.curr != steps.versions.outputs.prev
-        run: |
-          echo "Version changed: ${{ steps.versions.outputs.prev }} -> ${{ steps.versions.outputs.curr }}"
+      # Prüfen, ob Tag mit genau dieser Version existiert
+      - name: Check tag existence
+        id: tagcheck
+        uses: mukunku/tag-exists-action@v1.6.0
+        with:
+          tag: ${{ steps.read.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.ghToken }}
 
   BuildAndRelease:
-    needs: check_version
-    if: needs.check_version.outputs.curr != needs.check_version.outputs.prev
+    needs: preflight
+    if: ${{ needs.preflight.outputs.tag_exists != 'true' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      EXTENSION_VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,21 +89,14 @@ jobs:
         with:
           version: ${{ inputs.cliVersion }}
 
-      # Version früh ermitteln und für spätere Schritte verfügbar machen
-      - name: Get version
+      - name: Prepare names
         run: |
-          set -euo pipefail
-          ver="$(shopware-cli extension get-version '${{ inputs.path }}')"
-          {
-            echo "EXTENSION_VERSION=$ver"
-            echo "ZIP_NAME=${{ inputs.extensionName }}-$ver.zip"
-          } >> "$GITHUB_ENV"
+          echo "ZIP_NAME=${{ inputs.extensionName }}-${EXTENSION_VERSION}.zip" >> "$GITHUB_ENV"
 
       - name: Build & create zip
         env:
           NODE_OPTIONS: --openssl-legacy-provider
         run: |
-          # shopware-cli erzeugt <name>-<sha>.zip im aktuellen Verzeichnis
           shopware-cli extension zip --git-commit ${{ github.sha }} "${{ inputs.path }}" --release
           mv "${{ inputs.extensionName }}-${{ github.sha }}.zip" "${ZIP_NAME}"
           echo "Built ${ZIP_NAME}"
@@ -116,14 +106,6 @@ jobs:
         with:
           name: ${{ inputs.extensionName }}-${{ env.EXTENSION_VERSION }}
           path: ${{ env.ZIP_NAME }}
-
-      - name: Check Tag existence
-        uses: mukunku/tag-exists-action@v1.6.0
-        id: checkTag
-        with:
-          tag: ${{ env.EXTENSION_VERSION }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.ghToken }}
 
       - name: Validate Zip
         run: shopware-cli extension validate "$(pwd)/${ZIP_NAME}"
@@ -138,7 +120,6 @@ jobs:
           PUBLISH_SHOPWARE_STORE: ${{ inputs.publishShopwareStore == 'true' && secrets.accountUser != '' && secrets.accountPassword != '' }}
 
       - name: Extract Changelog
-        if: steps.checkTag.outputs.exists != 'true'
         run: shopware-cli extension get-changelog "$(pwd)/${ZIP_NAME}" > /tmp/changelog.txt
 
       - name: Unzip
@@ -148,18 +129,16 @@ jobs:
           rsync -av --exclude '.git' --delete "/tmp/toDeploy/${{ inputs.extensionName }}/" .
           rm -rf ./vendor
 
-      - name: Commit
-        if: steps.checkTag.outputs.exists != 'true'
+      - name: Commit & tag
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "<>"
           git add -f .
-          git commit -m "Build release"
-          git tag ${EXTENSION_VERSION}
-          git push origin ${EXTENSION_VERSION}
+          git commit -m "Build release" || echo "No changes to commit"
+          git tag "${EXTENSION_VERSION}"
+          git push origin "${EXTENSION_VERSION}"
 
       - name: Create a GitHub release
-        if: steps.checkTag.outputs.exists != 'true'
         uses: ncipollo/release-action@v1
         with:
           artifacts: /tmp/${{ env.ZIP_NAME }}
