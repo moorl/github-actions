@@ -56,7 +56,7 @@ jobs:
 
   BuildAndRelease:
     needs: check_version
-    if: ${{ needs.check_version.outputs.version_changed == 'true' }}
+    if: ${{ needs.check_version.outputs.version_changed }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
