@@ -108,6 +108,7 @@ jobs:
 
       - name: Store Upload
         if: ${{ env.PUBLISH_SHOPWARE_STORE == 'true' }}
+        continue-on-error: true
         run: shopware-cli account producer extension upload "$(pwd)/${ZIP_NAME}"
         env:
           GITHUB_TOKEN: ${{ secrets.ghToken }}
