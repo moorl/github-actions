@@ -43,24 +43,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       # Version NUR aus composer.json (unter inputs.path) lesen
       - name: Read version from composer.json
         id: read
         shell: bash
         run: |
-          set -euo pipefail
-          FILE="${{ inputs.path%/ }}/composer.json"
-          if [[ ! -f "$FILE" ]]; then
-            echo "::error::composer.json not found at $FILE"
+          CURR_VERSION=$(jq -r '.version // empty' composer.json)
+          if [ -z "$CURR_VERSION" ] || [ "$CURR_VERSION" = "null" ]; then
+            echo "composer.json has no .version field – aborting."
             exit 1
           fi
-          ver=$(jq -r '.version // empty' "$FILE")
-          if [[ -z "$ver" ]]; then
-            echo "::error::No 'version' field in $FILE"
-            exit 1
-          fi
-          echo "Using version: $ver"
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "version=$CURR_VERSION" >> "$GITHUB_OUTPUT"
 
       # Prüfen, ob Tag mit genau dieser Version existiert
       - name: Check tag existence
