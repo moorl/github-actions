@@ -1,1 +1,1 @@
-**Wichtiger Hinweis:** Sie benötigen das Foundation Plugin, welches Ihnen kostenlos zur Verfügung steht: [https://store.shopware.com/de/moorl50852475974f/foundation-bitte-hinweise-im-faq-beachten.html](https://store.shopware.com/de/moorl50852475974f/foundation-bitte-hinweise-im-faq-beachten.html)
+**Wichtiger Hinweis:** Sie benötigen das Foundation Plugin, welches Ihnen kostenlos zur Verfügung steht: [https://store.shopware.com/de/moorl50852475974f/moori-foundation.html](https://store.shopware.com/de/moorl50852475974f/moori-foundation.html)
