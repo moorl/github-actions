@@ -8,7 +8,9 @@ import argparse
 import pathlib
 import mimetypes
 import re
+import socket
 from typing import Dict, Any, List, Optional, Tuple
+from urllib.parse import urlparse
 from uuid import uuid4
 import hashlib
 
@@ -316,6 +318,25 @@ class ShopwareClient:
 # ------------------------
 
 def main():
+    shop_url = os.environ.get("SHOPWARE_URL", "").strip()
+    if not shop_url:
+        print("::notice::SHOPWARE_URL ist nicht gesetzt; Shopware-Synchronisierung wird übersprungen.")
+        return
+
+    try:
+        shopware_host = urlparse(shop_url).hostname
+    except ValueError:
+        shopware_host = None
+    if not shopware_host:
+        print("::notice::SHOPWARE_URL enthält keinen gültigen Host; Shopware-Synchronisierung wird übersprungen.")
+        return
+
+    try:
+        socket.getaddrinfo(shopware_host, None)
+    except (socket.gaierror, UnicodeError):
+        print(f"::notice::SHOPWARE_URL-Host '{shopware_host}' kann nicht aufgelöst werden; Shopware-Synchronisierung wird übersprungen.")
+        return
+
     parser = argparse.ArgumentParser(description="Sync store.yaml to Shopware product")
     parser.add_argument("--yaml-path", required=False, default="store.yaml")
     parser.add_argument("--repo-name", required=False, default=os.environ.get("REPO_NAME", ""))
@@ -330,11 +351,10 @@ def main():
     if not repo_name:
         abort("Repo-Name nicht gesetzt (REPO_NAME).")
 
-    shop_url = os.environ.get("SHOPWARE_URL", "").strip()
     client_id = os.environ.get("SHOPWARE_CLIENT_ID", "").strip()
     client_secret = os.environ.get("SHOPWARE_CLIENT_SECRET", "").strip()
-    if not (shop_url and client_id and client_secret):
-        abort("SHOPWARE_URL / SHOPWARE_CLIENT_ID / SHOPWARE_CLIENT_SECRET fehlen in den Secrets.")
+    if not (client_id and client_secret):
+        abort("SHOPWARE_CLIENT_ID / SHOPWARE_CLIENT_SECRET fehlen in den Secrets.")
 
     # 1) HTML je Locale bauen
     out_dir = base_dir / "dist"
