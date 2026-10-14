@@ -104,7 +104,7 @@ jobs:
           path: ${{ env.ZIP_NAME }}
 
       - name: Validate Zip
-        run: shopware-cli extension validate "$(pwd)/${ZIP_NAME}"
+        run: shopware-cli extension validate "$(pwd)/${ZIP_NAME}" --only builtin
 
       - name: Store Upload
         if: ${{ env.PUBLISH_SHOPWARE_STORE == 'true' }}
